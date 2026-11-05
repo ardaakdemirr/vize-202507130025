@@ -1,0 +1,76 @@
+-- =========================================================================
+-- Hafta 5 Analiz Sorguları - Kura #30 (Akıllı Şehir x IoT x Puanlama)
+-- =========================================================================
+
+-- Sorgu 1: Bölge Bazlı Özet
+-- Ne soruyor? Bölgeye göre ölçüm sayısı, ortalama PM2.5 ve maksimum değer nedir?
+-- Beklenen Sonuç: Her bölgenin çevre kirliliği yükünün genel bir karşılaştırması.
+SELECT 
+    s.region,
+    COUNT(m.id) AS toplam_olcum,
+    ROUND(AVG(m.pm25), 2) AS ortalama_pm25,
+    MAX(m.pm25) AS maksimum_pm25
+FROM sensors s
+JOIN measurements m ON s.id = m.sensor_id
+GROUP BY s.region;
+
+
+-- Sorgu 2: Eksik Puan Analizi
+-- Ne soruyor? Puanı olmayan (NULL) uyarıların oranı nedir?
+-- Beklenen Sonuç: Vatandaş geri bildirimi alınamamış uyarıların toplam içindeki payı.
+SELECT 
+    COUNT(*) AS toplam_uyari,
+    COUNT(r.accuracy_1_5) AS puanli_uyari_sayisi,
+    COUNT(*) - COUNT(r.accuracy_1_5) AS puansiz_uyari_sayisi,
+    ROUND(100.0 * (COUNT(*) - COUNT(r.accuracy_1_5)) / COUNT(*), 2) AS puansiz_oran_yuzde
+FROM alerts a
+LEFT JOIN ratings r ON a.id = r.alert_id;
+
+
+-- Sorgu 3: Düşük Puanlı Bölgeler (HAVING Kullanımı)
+-- Ne soruyor? Uyarı başına ortalama puanı 3'ün altında olan bölgeler hangileridir?
+-- Beklenen Sonuç: Vatandaşların memnuniyetsiz olduğu veya uyarıların kalitesiz algılandığı bölgeler.
+SELECT 
+    s.region,
+    ROUND(AVG(r.accuracy_1_5), 2) AS ortalama_puan
+FROM sensors s
+JOIN measurements m ON s.id = m.sensor_id
+JOIN alerts a ON m.id = a.measurement_id
+JOIN ratings r ON a.id = r.alert_id
+GROUP BY s.region
+HAVING AVG(r.accuracy_1_5) < 3.0;
+
+
+-- Sorgu 4: PM2.5 Değerlerinin Kategorizasyonu (CASE WHEN)
+-- Ne soruyor? PM2.5 seviyeleri düşük, orta, yüksek olarak ayrıldığında kategori bazında ortalama puan nedir?
+-- Beklenen Sonuç: Kirlilik arttıkça vatandaşların uyarı doğruluk algısının nasıl değiştiği.
+SELECT 
+    CASE 
+        WHEN m.pm25 <= 50 THEN 'Düşük'
+        WHEN m.pm25 <= 100 THEN 'Orta'
+        ELSE 'Yüksek'
+    END AS pm25_kategorisi,
+    COUNT(m.id) AS olcum_sayisi,
+    ROUND(AVG(r.accuracy_1_5), 2) AS ortalama_puan
+FROM measurements m
+JOIN alerts a ON m.id = a.measurement_id
+JOIN ratings r ON a.id = r.alert_id
+GROUP BY 
+    CASE 
+        WHEN m.pm25 <= 50 THEN 'Düşük'
+        WHEN m.pm25 <= 100 THEN 'Orta'
+        ELSE 'Yüksek'
+    END;
+
+
+-- Sorgu 5: Saatlik Yoğunluk ve Ortalama Puan (EXTRACT)
+-- Ne soruyor? Günün saatlerine göre uyarı sayısı ve vatandaşların verdiği ortalama puan nasıl dağılıyor?
+-- Beklenen Sonuç: Hangi saat dilimlerindeki uyarıların daha fazla dikkat çektiği veya doğrulandığı.
+SELECT 
+    EXTRACT(HOUR FROM a.sent_at) AS uyari_saati,
+    COUNT(a.id) AS uyari_sayisi,
+    ROUND(AVG(r.accuracy_1_5), 2) AS ortalama_puan
+FROM alerts a
+LEFT JOIN ratings r ON a.id = r.alert_id
+GROUP BY EXTRACT(HOUR FROM a.sent_at)
+ORDER BY uyari_saati;
